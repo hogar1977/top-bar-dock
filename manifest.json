@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.hogar1977.top-bar-dock",
+  "name": "Top Bar Dock",
+  "version": "1.0.0",
+  "author": "hogar1977",
+  "description": "Pinned launcher dock + running-window taskbar in one Omarchy bar widget: left-click launches/minimizes/restores, middle-drag reorders pins, right-click opens a context menu, hover shows a live window preview. Fully themed, gap-aware, web-app and Steam aware.",
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "top-bar-dock.qml"
+  },
+  "barWidget": {
+    "displayName": "Top Bar Dock",
+    "description": "Running apps plus a pinnable launcher dock, combined into one widget.",
+    "category": "Launchers",
+    "aliases": ["dock", "taskbar", "launcher"],
+    "allowMultiple": false,
+    "defaultSection": "left",
+    "defaults": {
+      "maxTitleLength": 18,
+      "previewDelay": 350
+    },
+    "schema": [
+      {
+        "key": "maxTitleLength",
+        "type": "number",
+        "label": "Max window title length",
+        "description": "Titles longer than this are truncated with an ellipsis wherever a chip's title is shown.",
+        "defaultValue": 18
+      },
+      {
+        "key": "previewDelay",
+        "type": "number",
+        "label": "Hover preview delay (ms)",
+        "description": "How long to hover a chip before its live preview thumbnail appears.",
+        "defaultValue": 350
+      }
+    ]
+  }
+}
