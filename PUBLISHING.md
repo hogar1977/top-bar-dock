@@ -141,7 +141,7 @@ https://github.com/hogar1977/top-bar-dock.git | hogar1977 | Pinned launcher dock
 
 ## Step 6 — Version bump convention
 
-- The `version` field lives in `manifest.json` (`1.0.0` now).
+- The `version` field lives in `manifest.json` (`1.1.0` now).
 - For contributors installing from GitHub: `omarchy plugin update io.github.hogar1977.top-bar-dock`
   pulls the latest default-branch HEAD — a version bump is just a commit.
 - For marketplace users: bump the manifest version, push, then use the "Plugin

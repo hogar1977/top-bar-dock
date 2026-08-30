@@ -39,12 +39,13 @@ BarWidget {
   readonly property real dragDeadzone: 10
   readonly property var dockEntries: buildDockEntries(root.liveWindows, pinnedIds, appVersion)
 
-  property var previewToplevel: null
+  property var previewEntry: null
   property Item previewAnchor: null
-  property var pendingPreviewToplevel: null
+  property var pendingPreviewEntry: null
   property Item pendingPreviewAnchor: null
   property var hoverChip: null
   property var lastToggleByAddress: ({})
+  property var lastWorkspaceByAddress: ({})
   readonly property int toggleGraceMs: 1000
   property string cachedGapsOut: ""
   property string cachedGapsIn: ""
@@ -171,10 +172,18 @@ BarWidget {
   }
 
   function restore(toplevel) {
-    var workspace = Hyprland.focusedWorkspace
-    var destination = workspace && String(workspace.name).indexOf("special:") !== 0
-      ? workspace.name : "1"
-    restoreTiled(toplevel, destination)
+    var addr = normalizedAddress(toplevel)
+    var ws = addr && root.lastWorkspaceByAddress[addr]
+    if (ws) {
+      restoreTiled(toplevel, ws)
+      var focusExpr = "hl.dsp.focus({ window = " + JSON.stringify("address:" + addr) + " })"
+      Quickshell.execDetached(["hyprctl", "dispatch", focusExpr])
+    } else {
+      var workspace = Hyprland.focusedWorkspace
+      var destination = workspace && String(workspace.name).indexOf("special:") !== 0
+        ? workspace.name : "1"
+      restoreTiled(toplevel, destination)
+    }
   }
 
   function gapLiteral(css) {
@@ -286,6 +295,11 @@ BarWidget {
   }
 
   function minimize(toplevel) {
+    var addr = normalizedAddress(toplevel)
+    var workspace = toplevel.workspace
+    if (addr && workspace && workspace.name) {
+      root.lastWorkspaceByAddress[addr] = workspace.name
+    }
     moveWindow(toplevel, shelfWorkspace, false)
     if (!anyOtherWindowVisible(toplevel)) {
       var setExpr = gapSetExpr(root.cachedGapsOut, root.cachedGapsIn)
@@ -719,6 +733,20 @@ BarWidget {
     return iconFromEntry(entry)
   }
 
+  function activateTile(toplevel) {
+    if (!toplevel) return
+    if (root.isMinimized(toplevel)) root.restore(toplevel)
+    else root.focusWindow(toplevel)
+  }
+
+  function previewCardTitle(entry) {
+    if (!entry) return ""
+    var ws = entry.windows || (entry.toplevel ? [entry.toplevel] : [])
+    if (ws.length <= 1) return String(entry.toplevel ? (entry.toplevel.title || "Window") : "")
+    var name = root.prettyPinName(entry.appKey || "")
+    return name ? (name + " — " + ws.length + " windows") : (ws.length + " windows")
+  }
+
   FileView {
     id: pinnedFile
     path: root.pinnedFilePath
@@ -853,44 +881,85 @@ BarWidget {
     var order = root.dragOrder !== null ? root.dragOrder : pinned
     for (var i = 0; i < order.length; i++) {
       var pid = order[i]
-      var win = null
+      var group = []
       for (var w = 0; w < windows.length; w++) {
         var addr2 = normalizedAddress(windows[w])
-        if (placed[addr2] || !root.isRelevantWindow(windows[w]) || !pinMatchesWindow(pid, windows[w])) continue
-        win = windows[w]
-        break
+        if (!addr2 || placed[addr2] || !root.isRelevantWindow(windows[w])) continue
+        if (root.pinMatchesWindow(pid, windows[w])) group.push(windows[w])
       }
-      if (win) {
-        entries.push({ kind: "window", pinId: pid, toplevel: win, entryId: null, entry: null })
-        placed[normalizedAddress(win)] = true
+      if (group.length > 0) {
+        var groupEntry = null
+        for (var ge = 0; ge < group.length; ge++) {
+          var candidateEntry = root.desktopEntry(group[ge])
+          if (candidateEntry && candidateEntry.id) { groupEntry = candidateEntry; break }
+        }
+        entries.push({
+          kind: "window",
+          pinId: pid,
+          appKey: pid,
+          toplevel: group[0],
+          windows: group,
+          entry: groupEntry || root.entryForId(pid)
+        })
+        for (var pa = 0; pa < group.length; pa++) placed[normalizedAddress(group[pa])] = true
       } else {
         entries.push({ kind: "pinned", pinId: pid, entryId: pid, entry: entryForId(pid), toplevel: null })
       }
     }
+    var tailGroups = []
     for (var j = 0; j < windows.length; j++) {
       var jaddr = normalizedAddress(windows[j])
-      if (placed[jaddr] || !root.isRelevantWindow(windows[j])) continue
-      entries.push({ kind: "window", toplevel: windows[j], entryId: null, entry: null })
+      if (!jaddr || placed[jaddr] || !root.isRelevantWindow(windows[j])) continue
+      var key = root.windowPinId(windows[j])
+      var bi = -1
+      for (var k = 0; k < tailGroups.length; k++) {
+        if (tailGroups[k].key === key) { bi = k; break }
+      }
+      if (bi === -1) {
+        tailGroups.push({ key: key, entry: root.desktopEntry(windows[j]), windows: [windows[j]] })
+      } else {
+        tailGroups[bi].windows.push(windows[j])
+      }
+      placed[jaddr] = true
+    }
+    for (var t = 0; t < tailGroups.length; t++) {
+      entries.push({
+        kind: "window",
+        pinId: "",
+        appKey: tailGroups[t].key,
+        toplevel: tailGroups[t].windows[0],
+        windows: tailGroups[t].windows,
+        entry: tailGroups[t].entry
+      })
     }
     var sig = ""
     for (var s = 0; s < entries.length; s++) {
       var e = entries[s]
-      if (e.kind === "pinned") sig += "p:" + e.entryId + ";"
-      else {
-        var ea = normalizedAddress(e.toplevel)
-        sig += "w:" + ea + ";"
-        if (root.pseudoByAddress[ea] === e.toplevel) {
-          var ews = (e.toplevel && e.toplevel.workspace && e.toplevel.workspace.name) || ""
-          sig += "s:" + ews + ";"
+      if (e.kind === "pinned") { sig += "p:" + e.entryId + ";"; continue }
+      sig += (e.pinId ? "P" : "T") + ":" + e.appKey + ":"
+      for (var sa = 0; sa < e.windows.length; sa++) {
+        var swa = normalizedAddress(e.windows[sa])
+        sig += "w:" + swa
+        if (root.pseudoByAddress[swa] === e.windows[sa]) {
+          sig += "s:" + ((e.windows[sa].workspace && e.windows[sa].workspace.name) || "")
         }
+        sig += ","
       }
+      sig += ";"
     }
     if (sig === root.dockCache.sig && root.dockCache.entries.length === entries.length) {
       return root.dockCache.entries
     }
+    var previewStillValid = false
+    if (root.previewEntry && root.previewEntry.windows) {
+      for (var pd = 0; pd < root.previewEntry.windows.length; pd++) {
+        var paddr = normalizedAddress(root.previewEntry.windows[pd])
+        if (paddr && placed[paddr]) { previewStillValid = true; break }
+      }
+    }
     root.dockCache.sig = sig
     root.dockCache.entries = entries
-    root.cancelAllPreviews()
+    if (!previewStillValid) root.cancelAllPreviews()
     return entries
   }
 
@@ -943,9 +1012,33 @@ BarWidget {
       var e = root.desktopEntry(t)
       return e ? e.id : ""
     })(toplevel)
+    var wins = (entryObj.windows && entryObj.windows.length > 1) ? entryObj.windows : null
     var items = []
     if (launchId) items.push({ label: "Open new instance", action: function(e) { root.launchEntryById(launchId) } })
+    if (wins) {
+      for (var wi = 0; wi < wins.length; wi++) {
+        items.push({
+          label: "Focus/Restore — " + root.windowTitle(wins[wi]),
+          action: (function(w) { return function(e) { root.activateTile(w) } })(wins[wi])
+        })
+        items.push({
+          label: "Close — " + root.windowTitle(wins[wi]), destructive: true,
+          action: (function(w) { return function(e) { root.closeWindow(w) } })(wins[wi])
+        })
+      }
+    }
     items = items.concat(root.moveMenuItems(entryObj.pinId || ""))
+    if (wins) {
+      items.push({
+        label: root.isPinned(entryObj.appKey) ? "Unpin from dock" : "Pin to dock",
+        action: function(e) { root.togglePin(e.appKey) }
+      })
+      items.push({
+        label: "Close all instances", destructive: true,
+        action: function(e) { for (var ci = 0; ci < e.windows.length; ci++) root.closeWindow(e.windows[ci]) }
+      })
+      return items
+    }
     items.push(
       { label: "Maximize", action: function(e) { root.maximizeWindow(e.toplevel) } },
       { label: root.isMinimized(toplevel) ? "Restore" : "Minimize",
@@ -977,8 +1070,15 @@ BarWidget {
 
   onTaskbarWindowsChanged: {
     root.rebuildLiveWindows()
-    if (previewToplevel && root.liveWindows.indexOf(previewToplevel) === -1) {
-      cancelPreview(previewToplevel)
+    if (root.previewEntry && root.previewEntry.windows) {
+      var stillActive = false
+      for (var pi = 0; pi < root.previewEntry.windows.length; pi++) {
+        if (root.liveWindows.indexOf(root.previewEntry.windows[pi]) !== -1) {
+          stillActive = true
+          break
+        }
+      }
+      if (!stillActive) root.cancelAllPreviews()
     }
   }
 
@@ -986,30 +1086,30 @@ BarWidget {
     root.cancelAllPreviews()
   }
 
-  function requestPreview(anchor, toplevel) {
-    if (!toplevel) return
+  function requestPreview(anchor, entryObj) {
+    if (!entryObj) return
     pendingPreviewAnchor = anchor
-    pendingPreviewToplevel = toplevel
+    pendingPreviewEntry = entryObj
     previewTimer.restart()
   }
 
-  function cancelPreview(toplevel) {
-    if (pendingPreviewToplevel === toplevel) {
+  function cancelPreview(entryObj) {
+    if (previewEntry === entryObj) {
+      previewEntry = null
+      previewAnchor = null
+    }
+    if (pendingPreviewEntry === entryObj) {
       previewTimer.stop()
       pendingPreviewAnchor = null
-      pendingPreviewToplevel = null
-    }
-    if (previewToplevel === toplevel) {
-      previewToplevel = null
-      previewAnchor = null
+      pendingPreviewEntry = null
     }
   }
 
   function cancelAllPreviews() {
     previewTimer.stop()
     pendingPreviewAnchor = null
-    pendingPreviewToplevel = null
-    previewToplevel = null
+    pendingPreviewEntry = null
+    previewEntry = null
     previewAnchor = null
   }
 
@@ -1018,9 +1118,9 @@ BarWidget {
     interval: root.previewDelay
     onTriggered: {
       root.previewAnchor = root.pendingPreviewAnchor
-      root.previewToplevel = root.pendingPreviewToplevel
+      root.previewEntry = root.pendingPreviewEntry
       root.pendingPreviewAnchor = null
-      root.pendingPreviewToplevel = null
+      root.pendingPreviewEntry = null
     }
   }
 
@@ -1123,10 +1223,15 @@ BarWidget {
         readonly property int iconExtent: Style.space(15)
         readonly property string iconSource: pinnedSlot
           ? root.iconFromId(modelData.entryId, modelData.entry) : root.windowIcon(toplevel)
-        readonly property bool minimized: !pinnedSlot && root.isMinimized(toplevel)
-        readonly property bool focused: !pinnedSlot && root.isActiveToplevel(toplevel) && !minimized
+        readonly property var windows: modelData.windows || (modelData.toplevel ? [modelData.toplevel] : [])
+        readonly property bool multi: !pinnedSlot && windows.length > 1
+        readonly property bool minimized: !pinnedSlot && windows.length > 0
+          && windows.every(function(w) { return root.isMinimized(w) })
+        readonly property bool focused: !pinnedSlot && windows.length > 0
+          && windows.some(function(w) { return root.isActiveToplevel(w) }) && !minimized
         readonly property bool elsewhere: !pinnedSlot && !minimized && toplevel
           && toplevel.workspace !== null && toplevel.workspace.id !== root.currentWorkspaceId
+        readonly property bool elsewhereSingle: !pinnedSlot && !multi && elsewhere
         readonly property string pinHost: pinnedSlot ? modelData.entryId : (modelData.pinId || "")
         readonly property bool draggedPin: root.dragOrder !== null && chip.pinHost === root.dragId
 
@@ -1138,7 +1243,7 @@ BarWidget {
         fixedWidth: root.barSize
         fixedHeight: root.barSize
         clip: true
-        dimmed: chip.draggedPin
+        dimmed: chip.draggedPin || chip.minimized
         tooltipText: pinnedSlot
           ? (modelData.entry && modelData.entry.name
               ? modelData.entry.name : root.prettyPinName(modelData.entryId))
@@ -1146,7 +1251,7 @@ BarWidget {
         onTooltipHoveredChanged: {
           if (tooltipHovered) {
             root.hoverChip = chip
-            if (!pinnedSlot) root.requestPreview(chip, toplevel)
+            if (!pinnedSlot) root.requestPreview(chip, modelData)
           } else if (root.hoverChip === chip) {
             root.hoverChip = null
           }
@@ -1156,6 +1261,11 @@ BarWidget {
           if (button === Qt.LeftButton) {
             if (pinnedSlot) {
               root.launchPinned(modelData.entryId)
+            } else if (chip.multi) {
+              root.previewTimer.stop()
+              root.previewAnchor = chip
+              root.previewEntry = modelData
+              root.hoverChip = chip
             } else {
               root.toggleWindow(toplevel)
             }
@@ -1241,7 +1351,7 @@ BarWidget {
           }
 
           Rectangle {
-            visible: !chip.pinnedSlot && !chip.minimized
+            visible: !chip.pinnedSlot && (chip.focused || chip.minimized)
             width: parent.width
             height: Style.space(2)
             radius: 0
@@ -1252,7 +1362,7 @@ BarWidget {
 
           Text {
             id: wsBadge
-            visible: chip.elsewhere
+            visible: chip.elsewhereSingle
             text: chip.toplevel && chip.toplevel.workspace && Number(chip.toplevel.workspace.id) > 0 ? String(chip.toplevel.workspace.id) : ""
             color: root.bar ? root.bar.barForeground : Color.foreground
             font.family: root.bar ? root.bar.fontFamily : Style.font.family
@@ -1268,6 +1378,7 @@ BarWidget {
 
         Component.onDestruction: {
           var tp = chip.toplevel
+          var md = chip.modelData
           if (root.hoverChip === chip) root.hoverChip = null
           if (root.dragOrder !== null && root.dragId === chip.pinHost) {
             root.dragOrder = null
@@ -1281,14 +1392,14 @@ BarWidget {
             root.menuAnchor = null
             root.menuEntry = null
           }
-          if (root.pendingPreviewAnchor === chip || (tp && root.pendingPreviewToplevel === tp)) {
+          if (root.pendingPreviewAnchor === chip || (md && root.pendingPreviewEntry === md)) {
             root.previewTimer.stop()
             root.pendingPreviewAnchor = null
-            root.pendingPreviewToplevel = null
+            root.pendingPreviewEntry = null
           }
-          if (root.previewAnchor === chip || (tp && root.previewToplevel === tp)) {
+          if (root.previewAnchor === chip || (md && root.previewEntry === md)) {
             root.previewAnchor = null
-            root.previewToplevel = null
+            root.previewEntry = null
           }
         }
       }
@@ -1312,10 +1423,17 @@ BarWidget {
     anchorItem: root.previewAnchor || root
     bar: root.bar
     triggerMode: "hover"
-    open: root.previewToplevel !== null && root.previewAnchor !== null
+    readonly property int tileCount: root.previewEntry && root.previewEntry.windows ? root.previewEntry.windows.length : 0
+    open: root.previewEntry !== null && root.previewAnchor !== null
       && (root.hoverChip === root.previewAnchor || previewCard.containsMouse)
-    contentWidth: Style.space(320)
-    contentHeight: Style.space(220)
+      && root.previewEntry.windows
+      && root.previewEntry.windows.some(function(w) { return root.isRelevantWindow(w) })
+    contentWidth: previewCard.tileCount > 1
+      ? Math.round(previewCard.tileCount * Style.space(96) + (previewCard.tileCount - 1) * Style.space(6) + Style.space(24))
+      : Style.space(320)
+    contentHeight: previewCard.tileCount > 1
+      ? Style.space(72) + Style.space(30) + Style.space(22) + Style.space(8)
+      : Style.space(220)
     padding: Style.space(8)
 
     Item {
@@ -1330,25 +1448,169 @@ BarWidget {
         anchors.bottomMargin: Style.space(7)
         clip: true
 
-        Image {
-          width: Style.space(48)
-          height: width
+        Row {
+          id: groupTiles
+          visible: root.previewEntry && root.previewEntry.windows && root.previewEntry.windows.length > 1
           anchors.centerIn: parent
-          source: root.previewToplevel ? root.windowIcon(root.previewToplevel) : ""
-          sourceSize.width: width * Screen.devicePixelRatio
-          sourceSize.height: height * Screen.devicePixelRatio
-          fillMode: Image.PreserveAspectFit
-          opacity: previewView.hasContent ? 0 : 0.5
+          spacing: Style.space(6)
+
+          Repeater {
+            model: root.previewEntry ? root.previewEntry.windows : []
+
+            Column {
+              required property var modelData
+              width: Style.space(96)
+              spacing: Style.space(2)
+
+              Rectangle {
+                width: Style.space(96)
+                height: Style.space(72)
+                radius: Style.space(4)
+                clip: true
+                color: Util.alpha(root.bar ? root.bar.barForeground : Color.foreground, 0.08)
+
+                Image {
+                  anchors.fill: parent
+                  source: modelData ? root.windowIcon(modelData) : ""
+                  sourceSize.width: width * Screen.devicePixelRatio
+                  sourceSize.height: height * Screen.devicePixelRatio
+                  fillMode: Image.PreserveAspectFit
+                  opacity: tileView.hasContent ? 0 : 0.5
+                }
+
+                ScreencopyView {
+                  id: tileView
+                  anchors.fill: parent
+                  captureSource: modelData
+                    ? (modelData.wayland || (modelData.real && modelData.real.wayland)) : null
+                  live: previewCard.open
+                  paintCursor: false
+                }
+
+                Rectangle {
+                  anchors.fill: parent
+                  radius: parent.radius
+                  color: "transparent"
+                  border.width: tileHover.hovered ? Math.max(1, Style.space(1)) : 0
+                  border.color: tileHover.hovered ? Color.accent : "transparent"
+                  Behavior on border.color {
+                    ColorAnimation { duration: 80 }
+                  }
+                }
+
+                Rectangle {
+                  anchors.top: parent.top
+                  anchors.left: parent.left
+                  anchors.topMargin: Style.space(3)
+                  anchors.leftMargin: Style.space(3)
+                  visible: badgeText.text !== ""
+                  radius: Style.space(4)
+                  color: Util.alpha(root.bar ? root.bar.background : Color.background, 0.75)
+                  width: badgeText.implicitWidth + Style.space(6)
+                  height: badgeText.implicitHeight + Style.space(3)
+
+                  Text {
+                    id: badgeText
+                    anchors.centerIn: parent
+                    text: {
+                      var ws = modelData && modelData.workspace ? modelData.workspace : null
+                      var direct = ws ? Number(ws.id) : 0
+                      if (direct > 0) return String(ws.id)
+                      var addr = root.normalizedAddress(modelData)
+                      var saved = addr ? root.lastWorkspaceByAddress[addr] : ""
+                      if (saved !== undefined && saved !== null) {
+                        var s = String(saved).trim()
+                        if (s && s.indexOf("special:") !== 0) return s
+                        var n = Number(s)
+                        if (n > 0) return String(n)
+                      }
+                      return ""
+                    }
+                    color: root.bar ? root.bar.barForeground : Color.foreground
+                    font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                    font.pixelSize: Math.max(6, Style.font.caption - 3)
+                  }
+                }
+
+                Rectangle {
+                  id: closeButton
+                  width: Style.space(16)
+                  height: Style.space(16)
+                  radius: width / 2
+                  anchors.top: parent.top
+                  anchors.right: parent.right
+                  anchors.topMargin: Style.space(3)
+                  anchors.rightMargin: Style.space(3)
+                  color: closeHover.hovered ? Color.urgent : Util.alpha(root.bar ? root.bar.background : Color.background, 0.75)
+                  opacity: tileHover.hovered ? 1 : 0
+                  Behavior on opacity {
+                    NumberAnimation { duration: 100 }
+                  }
+                  Behavior on color {
+                    ColorAnimation { duration: 100 }
+                  }
+
+                  Text {
+                    anchors.centerIn: parent
+                    text: "\u00d7"
+                    color: closeHover.hovered ? (root.bar ? root.bar.background : Color.background) : (root.bar ? root.bar.barForeground : Color.foreground)
+                    font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                    font.pixelSize: Style.font.caption
+                    font.bold: true
+                  }
+
+                  HoverHandler { id: closeHover }
+                  TapHandler {
+                    onTapped: root.closeWindow(modelData)
+                  }
+                }
+
+                HoverHandler { id: tileHover }
+                TapHandler {
+                  onTapped: if (!closeHover.hovered) root.activateTile(modelData)
+                }
+              }
+
+              Text {
+                width: parent.width
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: root.windowTitle(modelData)
+                textFormat: Text.PlainText
+                color: root.bar ? root.bar.barForeground : Color.foreground
+                font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                font.pixelSize: Style.font.caption
+                elide: Text.ElideRight
+                horizontalAlignment: Text.AlignHCenter
+              }
+            }
+          }
         }
 
-        ScreencopyView {
-          id: previewView
+        Item {
+          id: singleFrame
+          visible: !groupTiles.visible
           anchors.fill: parent
-          captureSource: root.previewToplevel
-            ? (root.previewToplevel.wayland
-                || (root.previewToplevel.real && root.previewToplevel.real.wayland)) : null
-          live: previewCard.open
-          paintCursor: false
+
+          Image {
+            width: Style.space(48)
+            height: width
+            anchors.centerIn: parent
+            source: root.previewEntry && root.previewEntry.toplevel ? root.windowIcon(root.previewEntry.toplevel) : ""
+            sourceSize.width: width * Screen.devicePixelRatio
+            sourceSize.height: height * Screen.devicePixelRatio
+            fillMode: Image.PreserveAspectFit
+            opacity: previewView.hasContent ? 0 : 0.5
+          }
+
+          ScreencopyView {
+            id: previewView
+            anchors.fill: parent
+            captureSource: root.previewEntry && root.previewEntry.toplevel
+              ? (root.previewEntry.toplevel.wayland
+                  || (root.previewEntry.toplevel.real && root.previewEntry.toplevel.real.wayland)) : null
+            live: previewCard.open
+            paintCursor: false
+          }
         }
       }
 
@@ -1357,7 +1619,7 @@ BarWidget {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        text: root.previewToplevel ? String(root.previewToplevel.title || "Window") : ""
+        text: root.previewEntry ? root.previewCardTitle(root.previewEntry) : ""
         textFormat: Text.PlainText
         color: root.bar ? root.bar.barForeground : Color.foreground
         font.family: root.bar ? root.bar.fontFamily : Style.font.family

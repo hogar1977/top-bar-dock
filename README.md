@@ -2,10 +2,11 @@
 
 A pinned-app launcher dock and running-window taskbar, combined into **one Omarchy bar widget**.
 
-Every open window gets its own chip; right-click to pin an app so its icon stays put
-as a launcher even when nothing is running. Left-click runs/restores, middle-click+drag
-reorders, right-click opens an action menu, and hovering a running window shows a live
-thumbnail preview — all inside your Omarchy top bar, inheriting your theme automatically.
+Running apps appear as chips, grouping multiple windows of the same app together;
+right-click to pin an app so its icon stays put as a launcher even when nothing is running.
+Left-click runs/restores, middle-click+drag reorders, right-click opens an action menu,
+and hovering shows live thumbnail previews — all inside your Omarchy top bar, inheriting
+your theme automatically.
 
 Built from the dock half of [OmaHarbor](https://github.com/anelcelik/omaharbor), which was
 itself built on [window-shelf](https://github.com/gardnmi/window-shelf); this version has
@@ -16,47 +17,14 @@ been **heavily rewritten, hardened, and extended** (see
 
 ## Features
 
-- **Tasks + pins in one widget** — running windows appear automatically, in the same row
-  as your pinned launchers. Pinned chips stay as grayed launchers when their app is closed.
-- **Left-click a pinned chip** — launches the app (via `uwsm-app` / `gtk-launch`; Steam
-  titles via `steam://rungameid`).
-- **Left-click a running chip** — minimizes it; click again to restore and focus. If the
-  window lives on another workspace, clicking switches you there and focuses it.
-- **Middle-click + drag** — reorder pinned apps; a drop indicator shows where it will land.
-  The new order is saved instantly.
-- **Right-click context menu** — `Open new instance`, `Move left`/`Move right`,
-  `Maximize`, `Minimize`/`Restore`, `Pin to dock`/`Unpin from dock`, and `Close`
-  (destructive actions highlighted).
-- **Live window previews** — hover a running chip to preview the window in a themed
-  popup (real `ScreencopyView` thumbnail + title). Previews cancel the moment you
-  switch workspaces, open a menu, or start a drag.
-- **Per-window chips** — one chip per window, not grouped by app, so multiple instances
-  are visible and switchable independently.
-- **Window-state visuals** — accent underline on the focused window; minimized chips are
-  dimmed without an underline; a small workspace-number badge marks windows that are open
-  on a different workspace.
-- **Minimize-to-shelf** — minimizing parks the window on the `special:omarchy-minimized`
-  Hyprland workspace, keeping the taskbar tidy and predictable.
-- **Gap-aware restore** — window maximize/restore (and unhide) correctly preserve your
-  configured `general:gaps_out` / `gaps_in`, including asymmetric values, instead of
-  snapping windows to zero gaps.
-- **Rock-solid window identity** — windows are resolved through a layered identity engine
-  (Wayland `appId`, `WM_CLASS`, initial class, identity snapshots, title tokens) so chips
-  map to the right app and the right pin — including **web-app windows** such as
-  `vivaldi-photocrowd.com__feed_-Default`, which resolve to their site entry (e.g.
-  *Photocrowd*) rather than to the host browser.
-- **Steam-aware** — Steam windows are identified by their app id and matched to pins
-  like *"Age of Empires II Definitive Edition"* via fuzzy token matching; `steam-app-<id>`
-  pins relaunch their game directly.
-- **Configuration** — `maxTitleLength` and `previewDelay` are exposed as bar-widget
-  settings with sensible defaults.
-- **Vertical bars** — the dock rotates for vertical bar placement, with vertically
-  stacked chips and rotated labels.
-- **Performance** — dock layout is memoized (signature-based), the window list is built
-  through a snapshot + poll pipeline, and the app-entry index rebuilds only when the
-  desktop-entry catalog changes. The result updates smoothly even with many windows open.
-- **Fully themed** — colors, fonts, sizes and popups all come from the active Omarchy
-  theme and follow the bar, so the dock restyles itself whenever you switch themes.
+- **Launcher and taskbar in one** — pinned apps and running windows live together in your bar. Pinned apps stay ready to launch even when closed.
+- **Per-app window grouping** — multiple windows of the same app share a single icon. Hover for live previews, or click to switch to or close any window.
+- **Click to launch or switch** — click to launch a pinned app, minimize/restore an open window, or instantly jump to a window on another workspace.
+- **Drag to rearrange** — middle-click and drag pinned icons to reorder your dock; changes are saved automatically.
+- **Right-click quick actions** — access instant actions to open a new instance, pin or unpin, maximize, minimize, or close windows.
+- **Smart app matching** — web apps and Steam games appear with their own proper names and icons, separate from the browser or Steam client.
+- **Status at a glance** — clean visual indicators highlight the focused app, dim minimized windows, and show workspace numbers for windows on other desktops.
+- **Adapts to your setup** — matches your active Omarchy theme automatically and works smoothly on both horizontal and vertical bars.
 
 ## Interaction quick reference
 
@@ -123,43 +91,12 @@ Editing anything under `~/.config/omarchy/plugins/` hot-reloads the plugin autom
 
 ## Improvements over OmaHarbor
 
-The dock half of [OmaHarbor](https://github.com/anelcelik/omaharbor) was taken as the
-starting point and **rebuilt, hardened, and extended**. What changed:
+Built as a standalone dock widget from the dock half of [OmaHarbor](https://github.com/anelcelik/omaharbor) (omitting the workspace switcher). Key functional additions include:
 
-1. **Name and scope** — published as a standalone *dock* widget (`io.github.hogar1977.top-bar-dock`),
-   split out from OmaHarbor's combined workspace-switcher + dock widget.
-2. **Correct app identity** — new layered identity engine that understands wayland
-   app-id / `WM_CLASS` / initial-class / snapshot candidates and resolves a window to the
-   right desktop entry *and* the right pin. This is what fixed web-app windows being
-   attributed to their host browser (e.g. a `vivaldi-…photocrowd…` window being claimed by
-   the Vivaldi pin).
-3. **Web-app (site) awareness** — scored desktop-entry matching with a domain bonus,
-   so `*-<site>.<tld>.__…` and `*.webview` windows resolve to their site's entry
-   (via its URL-bearing `Exec`) rather than by a shared browser token.
-4. **Pin↔window exclusivity** — each pin claims at most one window and every matching
-   window merges into its own pinned chip; no more duplicate claims, stray extra chips,
-   or icons "flipping" between two pinned slots on each refresh.
-5. **Fuzzy pin matching, tightened** — name- and title-based pins (Steam titles like
-   *"Age of Empires II Definitive Edition"*) match via shared meaningful tokens, but the
-   fuzzy fallback now requires **two or more** shared tokens so a generic browser name
-   can't grab an unrelated window.
-6. **Gap-preserving maximize/restore** — the window restore path caches the live
-   `general:gaps_out` / `gaps_in` (polled, primed at startup, and guarded against reading
-   the transient zero during an operation) and writes back the exact values — including
-   asymmetric per-edge gaps — instead of leaving windows stuck at zero gaps.
-7. **Edge-case handling** — graceful behavior for "last window minimized", minimize-from-
-   another-workspace, close-vs-cancel of popups, and drag cancellation; popup state is
-   cleaned up when chips are destroyed (no stranded popups).
-8. **Robust context menu** — menu built from a proper items model with destructive-action
-   highlighting and correct delegate data handling (no more empty menus).
-9. **Startup race & ordering** — entry index and pinned state are initialized in the right
-   order at load, the running-window list rebuilds only when something actually changes,
-   and `dockEntries` is memoized by signature to keep the 700 ms refresh cheap and stable.
-10. **Vertical bars** — chips stack and reorder vertically, and labels render rotated.
-11. **Single-file design** — everything lives in one auditable `top-bar-dock.qml` with a
-    minimal `manifest.json`; no split files to keep in sync.
-12. **Documentation & publishing** — manifest metadata, README, license, and this
-    change-list, ready for distribution.
+1. **Smarter app identity (Web-apps & Steam)** — a layered identity engine with domain-bonus scoring resolves web-app windows (e.g. `vivaldi-…photocrowd…`) to their own web-app desktop entry instead of the parent browser. Dedicated Steam integration matches games by App ID/title tokens and launches `steam-app-<id>` pins via `steam://rungameid`.
+2. **Per-app window grouping** — multiple windows of the same app merge into a single chip featuring a multi-tile live preview grid, per-window Focus and Close actions, and a "Close all instances" option (OmaHarbor creates a separate chip per window with single previews).
+3. **Direct on-bar pin reordering** — middle-click + drag pinned chips directly on the bar with a visual drop indicator, or use right-click `Move left` / `Move right` menu actions, replacing OmaHarbor's separate hamburger dock-menu popup.
+4. **Compositor gap preservation** — reads and caches your live `general:gaps_out` and `gaps_in` values (including asymmetric per-edge gaps) and restores them across maximize/restore/minimize cycles, rather than snapping windows to zero gaps or hardcoded 10/5 fallbacks.
 
 ## Acknowledgements
 
