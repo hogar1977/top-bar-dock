@@ -152,9 +152,11 @@ https://github.com/hogar1977/top-bar-dock.git | hogar1977 | Pinned launcher dock
 | File | Purpose |
 |---|---|
 | `manifest.json` | Omarchy plugin manifest (schema v1) |
-| `top-bar-dock.qml` | The entire widget (single file) |
+| `top-bar-dock.qml` | Bar widget view (chips, preview, menu) |
+| `Service.qml` | Singleton model: windows, pins, identity, Hyprland events |
+| `Identity.js` / `Windows.js` / `Compositor.js` / `Dock.js` / `Persistence.js` | Extracted logic modules |
 | `README.md` | Landing page: description, features, acknowledgements, install docs |
 | `LICENSE` | MIT, with OmaHarbor / window-shelf attribution |
 | `PUBLISHING.md` | This checklist |
 | `.gitignore` | Keeps your personal `pinned.json` out of the repo |
-| `pinned.json` | *(local only, not committed)* your personal pins |
+| `pinned.json` | *(legacy local file; pins now live in `~/.local/state/omarchy/top-bar-dock/`)* |

@@ -79,8 +79,9 @@ omarchy bar set io.github.hogar1977.top-bar-dock <key> <value>
 | `maxTitleLength` | `18` | Window titles longer than this are truncated with an ellipsis. |
 | `previewDelay` | `350` | Milliseconds to hover a chip before the live preview appears. |
 
-Your pins are stored in `~/.config/omarchy/plugins/io.github.hogar1977.top-bar-dock/pinned.json`
-(created on first pin; safe to ignore in version control).
+Your pins are stored in `~/.local/state/omarchy/top-bar-dock/pinned.json`
+(created on first pin). An older `pinned.json` inside the plugin folder is
+migrated automatically the first time the new path is used.
 
 Editing anything under `~/.config/omarchy/plugins/` hot-reloads the plugin automatically.
 
@@ -97,6 +98,17 @@ Built as a standalone dock widget from the dock half of [OmaHarbor](https://gith
 2. **Per-app window grouping** — multiple windows of the same app merge into a single chip featuring a multi-tile live preview grid, per-window Focus and Close actions, and a "Close all instances" option (OmaHarbor creates a separate chip per window with single previews).
 3. **Direct on-bar pin reordering** — middle-click + drag pinned chips directly on the bar with a visual drop indicator, or use right-click `Move left` / `Move right` menu actions, replacing OmaHarbor's separate hamburger dock-menu popup.
 4. **Compositor gap preservation** — reads and caches your live `general:gaps_out` and `gaps_in` values (including asymmetric per-edge gaps) and restores them across maximize/restore/minimize cycles, rather than snapping windows to zero gaps or hardcoded 10/5 fallbacks.
+
+## Changelog
+
+### 1.2.0
+
+- Chip highlight was reworked: selected and running apps use a clearer accent underline, hover is a light wash, and idle chips stay clean on a transparent bar
+- Uses less background work, so the bar stays lighter with several monitors
+- Pins are saved outside the plugin folder, so updates no longer risk wiping them
+- Minimize and restore no longer change your window gaps
+- Pinned apps remember themselves more reliably after a restart
+- Same dock as before: web apps stay separate from the browser, Steam games stay separate from Steam
 
 ## Acknowledgements
 
