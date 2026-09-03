@@ -101,6 +101,10 @@ Built as a standalone dock widget from the dock half of [OmaHarbor](https://gith
 
 ## Changelog
 
+### 1.2.1
+
+- Steam-related app recognition is now more accurate
+
 ### 1.2.0
 
 - Chip highlight was reworked: selected and running apps use a clearer accent underline, hover is a light wash, and idle chips stay clean on a transparent bar

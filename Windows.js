@@ -33,6 +33,40 @@ function windowClass(snapshotByAddress, toplevel) {
   return ""
 }
 
+function isWineSystemClass(cls) {
+  var low = String(cls || "").toLowerCase()
+  return /^(explorer|services|winedevice|plugplay|svchost|rundll32|wineboot|winebrowser|tabtip)\.exe$/i.test(low)
+}
+
+function isWineSystemTitle(title) {
+  var low = String(title || "").toLowerCase()
+  return /^(wine system tray|default ime|gdi\+ window|msaa hook|wine gecko)$/i.test(low)
+}
+
+function isSteamSystemWindow(cls, title, isFloating) {
+  var lowCls = String(cls || "").toLowerCase()
+  var lowTitle = String(title || "").toLowerCase()
+  if (lowCls === "steamwebhelper") return true
+  if (lowCls === "steam") {
+    if (!title) return true
+    if (lowTitle.indexOf("friends list") === 0 || lowTitle.indexOf("friends & chat") === 0) return false
+    if (lowTitle.indexOf("settings") !== -1) return false
+    if (isFloating) return true
+  }
+  return false
+}
+
+function isTransientProgressWindow(title, isFloating) {
+  if (!title) return false
+  var low = String(title).trim()
+  if (isFloating) {
+    if (/^(launching|loading|preparing|configuring|updating|checking|starting|connecting|installing)/i.test(low)) return true
+    if (/microsoft visual c\+\+/i.test(low)) return true
+    if (/directx/i.test(low)) return true
+  }
+  return false
+}
+
 function isRelevantWindow(snapshotByAddress, shelfWorkspace, toplevel) {
   if (!toplevel) return false
   var ipc = toplevel.lastIpcObject || null
@@ -43,11 +77,11 @@ function isRelevantWindow(snapshotByAddress, shelfWorkspace, toplevel) {
   if (workspace && String(workspace.name || "").indexOf("special:") === 0
       && String(workspace.name || "") !== shelfWorkspace) return false
   if (!cls) return false
-  if (cls === "steam" && !title) return false
-  if (cls === "steam" && isFloatingWindow(toplevel)) return false
-  if (isFloatingWindow(toplevel) && !title) return false
-  if (isFloatingWindow(toplevel)
-      && /^(launching|loading|preparing|configuring|updating|checking|starting)/i.test(title)) return false
+  if (isWineSystemClass(cls) || isWineSystemTitle(title)) return false
+  var floating = isFloatingWindow(toplevel)
+  if (isSteamSystemWindow(cls, title, floating)) return false
+  if (floating && !title) return false
+  if (isTransientProgressWindow(title, floating)) return false
   return true
 }
 

@@ -13,5 +13,8 @@ it with AppSearch / heuristicLookup-only.
 | Friends List / Friends & Chat | `steam-friends` | `steam` |
 | Steam Settings | `steam-settings` | `steam` |
 | `steam_app_<id>` game | that game / `steam-app-<id>` | `steam` |
+| `steam_proton` / Wine app with matching desktop file (e.g. Sequator) | that app's desktop id / name | `steam` |
+| `steam_proton` / Wine app without desktop file | distinct chip by window title | `steam` |
+| Wine system helpers (`explorer.exe`, `services.exe`, `winedevice.exe`, etc.) | not relevant | any chip |
 | Steam "Launching…" or untitled floating helper | not relevant | any chip |
 | Two windows of one desktop id | one chip | two chips |

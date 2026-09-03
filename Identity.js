@@ -62,6 +62,11 @@ function cachedRecord(ctx, toplevel) {
   return rec
 }
 
+function isGenericRunnerClass(candidate) {
+  var c = String(candidate || "").toLowerCase().trim()
+  return c === "steam_proton" || c === "proton" || c === "wine" || c === "wine64" || c === "wine-preloader"
+}
+
 function computeRecord(ctx, toplevel) {
   var candidates = windowIdentityCandidates(ctx, toplevel)
   var steamAppId = steamAppIdFromCandidates(candidates)
@@ -74,7 +79,15 @@ function computeRecord(ctx, toplevel) {
     if (entry.id === "steam" && steamSurface) pinId = steamSurface
     else pinId = entry.id
   } else {
-    pinId = candidates.length > 0 ? candidates[0] : ""
+    var title = String(toplevel && toplevel.title ? toplevel.title : "").trim()
+    var nonGeneric = candidates.filter(function(c) { return !isGenericRunnerClass(c) })
+    if (nonGeneric.length > 0) {
+      pinId = nonGeneric[0]
+    } else if (title) {
+      pinId = title
+    } else {
+      pinId = candidates.length > 0 ? candidates[0] : ""
+    }
   }
   return {
     candidates: candidates,
@@ -251,19 +264,29 @@ function computeDesktopEntry(ctx, toplevel, candidates, appid) {
     return null
   }
   var desktop = ctx.desktop
-  for (var i = 0; i < candidates.length; i++) {
-    if (looksLikeWebappClass(candidates[i])) continue
-    var direct = desktop.heuristicLookup(candidates[i])
+  var filteredCandidates = candidates.filter(function(c) {
+    return !looksLikeWebappClass(c) && !isGenericRunnerClass(c)
+  })
+  for (var i = 0; i < filteredCandidates.length; i++) {
+    var direct = desktop.heuristicLookup(filteredCandidates[i])
     if (direct) return direct
   }
-  var scored = scoredDesktopEntry(ctx, candidates)
+  var scored = scoredDesktopEntry(ctx, filteredCandidates)
   if (scored) return scored
-  for (var h = 0; h < candidates.length; h++) {
-    var viaToken = heuristicEntryFor(ctx, candidates[h])
+  for (var h = 0; h < filteredCandidates.length; h++) {
+    var viaToken = heuristicEntryFor(ctx, filteredCandidates[h])
     if (viaToken) return viaToken
   }
-  var withTitle = candidates.concat([String(toplevel && toplevel.title ? toplevel.title : "")])
-  return scoredDesktopEntry(ctx, withTitle)
+  var title = String(toplevel && toplevel.title ? toplevel.title : "").trim()
+  if (title) {
+    var directTitle = desktop.heuristicLookup(title)
+    if (directTitle) return directTitle
+    var scoredTitle = scoredDesktopEntry(ctx, [title])
+    if (scoredTitle) return scoredTitle
+    var viaTitleToken = heuristicEntryFor(ctx, title)
+    if (viaTitleToken) return viaTitleToken
+  }
+  return null
 }
 
 function desktopEntry(ctx, toplevel) {
@@ -285,7 +308,10 @@ function entryForId(ctx, pinId) {
 
 function fallbackPinId(ctx, toplevel) {
   var candidates = windowIdentityCandidates(ctx, toplevel)
-  return candidates.length > 0 ? candidates[0] : ""
+  var nonGeneric = candidates.filter(function(c) { return !isGenericRunnerClass(c) })
+  if (nonGeneric.length > 0) return nonGeneric[0]
+  var title = String(toplevel && toplevel.title ? toplevel.title : "").trim()
+  return title || (candidates.length > 0 ? candidates[0] : "")
 }
 
 function pinMatchesWindow(ctx, isRelevant, pinId, toplevel) {
@@ -304,14 +330,18 @@ function pinMatchesWindow(ctx, isRelevant, pinId, toplevel) {
   if (low.indexOf("steam-") === 0) return low === windowPinId(ctx, toplevel)
   var entry = desktopEntry(ctx, toplevel)
   if (entry && entry.id && entry.id.toLowerCase() === low) return true
+  if (entry && entry.name && entry.name.toLowerCase() === low) return true
+  var winPin = windowPinId(ctx, toplevel)
+  if (winPin && winPin.toLowerCase() === low) return true
   var candidates = windowIdentityCandidates(ctx, toplevel)
   for (var i = 0; i < candidates.length; i++) {
-    if (candidates[i].toLowerCase() === low) return true
+    if (!isGenericRunnerClass(candidates[i]) && candidates[i].toLowerCase() === low) return true
   }
   var pinTokens = meaningfulTokens(pinId)
   if (pinTokens.length) {
     var shared = {}
     for (var wc = 0; wc < candidates.length; wc++) {
+      if (isGenericRunnerClass(candidates[wc])) continue
       var winTokens = meaningfulTokens(candidates[wc])
       for (var wt = 0; wt < winTokens.length; wt++) {
         if (pinTokens.indexOf(winTokens[wt]) !== -1) shared[winTokens[wt]] = true

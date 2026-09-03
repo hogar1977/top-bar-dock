@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.hogar1977.top-bar-dock",
   "name": "Top Bar Dock",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "author": "hogar1977",
   "description": "Pinned launcher dock + running-window taskbar in one Omarchy bar widget: left-click launches/minimizes/restores, middle-drag reorders pins, right-click opens a context menu, hover shows a live window preview. Fully themed, web-app and Steam aware.",
   "kinds": ["bar-widget", "service"],
